@@ -43,6 +43,7 @@ var (
 	database       *sql.DB
 	pollMu         sync.Mutex
 	staleThreshold = 5 * time.Minute
+	consecutiveFails int
 )
 
 func main() {
@@ -87,17 +88,27 @@ func main() {
 		log.Printf("[poller] Initial fetch failed: %v (will retry on next tick)", err)
 	}
 
-	// Start background poller
-	ticker := time.NewTicker(pollInterval)
+	// Start background poller with backoff
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	go func() {
+		timer := time.NewTimer(pollInterval)
+		defer timer.Stop()
 		for {
 			select {
-			case <-ticker.C:
+			case <-timer.C:
 				if err := fetchAndCache(apiKey); err != nil {
-					log.Printf("[poller] Fetch failed: %v", err)
+					consecutiveFails++
+					wait := backoffDuration(consecutiveFails, pollInterval)
+					log.Printf("[poller] Fetch failed (%d consecutive): %v — next retry in %v", consecutiveFails, err, wait)
+					timer.Reset(wait)
+				} else {
+					if consecutiveFails > 0 {
+						log.Printf("[poller] Recovered after %d consecutive failures", consecutiveFails)
+					}
+					consecutiveFails = 0
+					timer.Reset(pollInterval)
 				}
 			case <-ctx.Done():
 				return
@@ -123,7 +134,6 @@ func main() {
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 		<-sigCh
 		log.Println("Shutting down...")
-		ticker.Stop()
 		cancel()
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer shutdownCancel()
@@ -251,6 +261,23 @@ func fetchAndCache(apiKey string) error {
 
 	log.Printf("[poller] Updated gold_18k: %s = %d Rial", name, priceRial)
 	return nil
+}
+
+// backoffDuration returns how long to wait before the next retry.
+// Backs off exponentially: normal, 2min, 5min, 10min, capped at 30min.
+func backoffDuration(fails int, base time.Duration) time.Duration {
+	switch {
+	case fails <= 2:
+		return base // normal interval for first couple of failures
+	case fails <= 4:
+		return 2 * time.Minute
+	case fails <= 6:
+		return 5 * time.Minute
+	case fails <= 10:
+		return 10 * time.Minute
+	default:
+		return 30 * time.Minute // likely IP-banned, wait long
+	}
 }
 
 func envOrDefault(key, fallback string) string {
