@@ -1,0 +1,28 @@
+version: "3.8"
+
+services:
+  gold-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    mem_limit: 64m
+    memswap_limit: 64m
+    ports:
+      - "8080:8080"
+    environment:
+      BRS_API_KEY: ${BRS_API_KEY}
+      PORT: ${PORT:-8080}
+      POLL_INTERVAL: ${POLL_INTERVAL:-60}
+      DB_PATH: /data/gold.db
+    volumes:
+      - gold_data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  gold_data:
