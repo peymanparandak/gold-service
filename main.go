@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"database/sql"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -178,7 +180,20 @@ func fetchAndCache(apiKey string) error {
 
 	url := fmt.Sprintf("https://BrsApi.ir/Api/Market/Gold_Currency.php?key=%s", apiKey)
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{},
+			ForceAttemptHTTP2: false,
+			DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				dialer := &net.Dialer{Timeout: 10 * time.Second}
+				conn, err := tls.DialWithDialer(dialer, network, addr, &tls.Config{
+					NextProtos: []string{"http/1.1"},
+				})
+				return conn, err
+			},
+		},
+	}
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return fmt.Errorf("creating request failed: %w", err)
