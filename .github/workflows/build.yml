@@ -50,7 +50,20 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Trigger Dokploy deploy
-        if: success()
+      - name: Verify image is pullable
         run: |
-          curl -fsSL --max-time 30 "${{ secrets.DOKPLOY_GOLD_WEBHOOK_URL }}" || echo "Warning: Dokploy webhook failed"
+          echo "Verifying image is available on GHCR..."
+          for i in 1 2 3 4 5; do
+            if docker pull ${{ env.IMAGE }}:latest; then
+              echo "Image verified and pullable."
+              exit 0
+            fi
+            echo "Attempt $i failed, retrying in 10s..."
+            sleep 10
+          done
+          echo "Image not pullable after 5 attempts."
+          exit 1
+
+      - name: Trigger Dokploy deploy
+        run: |
+          curl -fsSL --max-time 30 "${{ secrets.DOKPLOY_GOLD_WEBHOOK_URL }}"
