@@ -3,8 +3,6 @@ name: Build & Push Gold Price Service
 on:
   push:
     branches: [main]
-    paths:
-      - "gold-price-service/**"
   workflow_dispatch:
 
 env:
@@ -45,7 +43,7 @@ jobs:
       - name: Build & push image
         uses: docker/build-push-action@v6
         with:
-          context: ./gold-price-service
+          context: .
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
